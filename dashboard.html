@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dashboard Supply & Demand - AIX</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root { --bg:#f6f7f9; --card:#fff; --text:#17202a; --muted:#687385; --border:#dfe5ec; --accent:#243b6b; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--bg); color:var(--text); }
+    header { background:var(--accent); color:white; padding:18px 24px; display:flex; justify-content:space-between; align-items:center; gap:16px; }
+    header h1 { font-size:20px; margin:0; }
+    main { padding:24px; max-width:1320px; margin:0 auto; }
+    .grid { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:16px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,.04); }
+    .wide { grid-column:1 / -1; }
+    h2 { margin:0 0 12px; font-size:17px; }
+    .kpi { font-size:30px; font-weight:800; }
+    .muted { color:var(--muted); }
+    input, button { padding:9px 10px; border:1px solid var(--border); border-radius:10px; font:inherit; }
+    button { background:var(--accent); color:white; cursor:pointer; border:none; font-weight:600; }
+    button.secondary { background:#eef2f7; color:var(--text); border:1px solid var(--border); }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th, td { border-bottom:1px solid var(--border); padding:8px; text-align:left; }
+    th { color:var(--muted); font-size:12px; background:#fafbfc; }
+    .toolbar { display:flex; gap:10px; align-items:center; margin:0 0 16px; flex-wrap:wrap; }
+    .bar { height:18px; background:#e8edf4; border-radius:999px; overflow:hidden; }
+    .bar > span { display:block; height:100%; background:var(--accent); min-width:2px; }
+    .hidden { display:none !important; }
+    #loginCard { max-width:420px; margin:60px auto; }
+    @media (max-width: 980px) { .grid { grid-template-columns:1fr; } header { flex-direction:column; align-items:flex-start; } }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Dashboard Supply & Demand · AIX</h1>
+    <small>Vista ejecutiva</small>
+  </div>
+  <div>
+    <a href="./index.html"><button class="secondary" type="button">Volver</button></a>
+    <button id="logoutBtn" class="secondary hidden" type="button">Salir</button>
+  </div>
+</header>
+
+<main>
+  <section id="loginCard" class="card">
+    <h2>Acceso</h2>
+    <p class="muted">Usa el mismo usuario que en Supply & Demand.</p>
+    <input id="loginEmail" type="email" placeholder="usuario@empresa.com" style="width:100%;margin-bottom:8px;" />
+    <input id="loginPassword" type="password" placeholder="Contraseña" style="width:100%;margin-bottom:12px;" />
+    <button id="loginBtn">Entrar</button>
+  </section>
+
+  <section id="app" class="hidden">
+    <div class="toolbar">
+      <label>Desde <input id="fromDate" type="date"></label>
+      <label>Hasta <input id="toDate" type="date"></label>
+      <button id="refreshBtn">Actualizar</button>
+    </div>
+
+    <div class="grid">
+      <div class="card"><h2>Recursos activos</h2><div id="kpiResources" class="kpi">0</div></div>
+      <div class="card"><h2>Proyectos abiertos</h2><div id="kpiProjects" class="kpi">0</div></div>
+      <div class="card"><h2>FTE capacidad</h2><div id="kpiCapacity" class="kpi">0</div></div>
+      <div class="card"><h2>FTE asignado</h2><div id="kpiAssigned" class="kpi">0</div></div>
+
+      <div class="card wide">
+        <h2>Asignación por recurso</h2>
+        <table id="resourceLoadTable">
+          <thead><tr><th>Recurso</th><th>Rol</th><th>Asignación media</th><th>Visual</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="card wide">
+        <h2>Demanda por proyecto</h2>
+        <table id="projectDemandTable">
+          <thead><tr><th>Proyecto</th><th>Cliente</th><th>Estado</th><th>Demanda FTE</th><th>Fechas</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="card wide">
+        <h2>Asignaciones</h2>
+        <table id="assignmentsTable">
+          <thead><tr><th>Recurso</th><th>Proyecto</th><th>Fechas</th><th>%</th><th>Tipo</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  const ENVIRONMENT_NAME = "AIX";
+  const SUPABASE_URL = "PON_AQUI_TU_SUPABASE_URL";
+  const SUPABASE_ANON_KEY = "PON_AQUI_TU_SUPABASE_ANON_KEY";
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const $ = id => document.getElementById(id);
+
+  let currentUser = null;
+
+  function initDates() {
+    const today = new Date();
+    const from = new Date(today.getFullYear(), today.getMonth(), 1);
+    const to = new Date(today.getFullYear(), today.getMonth() + 3, 0);
+    $("fromDate").value = from.toISOString().slice(0,10);
+    $("toDate").value = to.toISOString().slice(0,10);
+  }
+
+  async function login() {
+    const { data, error } = await sb.auth.signInWithPassword({
+      email: $("loginEmail").value.trim(),
+      password: $("loginPassword").value
+    });
+    if (error) return alert(error.message);
+    currentUser = data.user;
+    await afterLogin();
+  }
+
+  async function logout() {
+    await sb.auth.signOut();
+    currentUser = null;
+    $("app").classList.add("hidden");
+    $("loginCard").classList.remove("hidden");
+    $("logoutBtn").classList.add("hidden");
+  }
+
+  async function checkSession() {
+    const { data } = await sb.auth.getSession();
+    if (data.session?.user) {
+      currentUser = data.session.user;
+      await afterLogin();
+    }
+  }
+
+  async function afterLogin() {
+    $("loginCard").classList.add("hidden");
+    $("app").classList.remove("hidden");
+    $("logoutBtn").classList.remove("hidden");
+    initDates();
+    await loadDashboard();
+  }
+
+  async function loadDashboard() {
+    const from = $("fromDate").value;
+    const to = $("toDate").value;
+
+    const [r, p, a] = await Promise.all([
+      sb.from("resources").select("*").eq("active", true).order("full_name"),
+      sb.from("projects").select("*").in("status", ["Pipeline","Oferta","Aprobado","En curso"]).order("project_name"),
+      sb.from("assignments").select("*, resources(full_name, role), projects(project_name)").lte("start_date", to).gte("end_date", from)
+    ]);
+
+    if (r.error) return alert(r.error.message);
+    if (p.error) return alert(p.error.message);
+    if (a.error) return alert(a.error.message);
+
+    const resources = r.data || [];
+    const projects = p.data || [];
+    const assignments = a.data || [];
+
+    const capacity = resources.reduce((acc, x) => acc + Number(x.weekly_capacity || 0), 0);
+    const assignedFte = assignments.reduce((acc, x) => acc + Number(x.allocation_pct || 0) / 100, 0);
+
+    $("kpiResources").textContent = resources.length;
+    $("kpiProjects").textContent = projects.length;
+    $("kpiCapacity").textContent = capacity.toFixed(1);
+    $("kpiAssigned").textContent = assignedFte.toFixed(1);
+
+    renderResourceLoad(resources, assignments);
+    renderProjects(projects);
+    renderAssignments(assignments);
+  }
+
+  function renderResourceLoad(resources, assignments) {
+    const rows = resources.map(res => {
+      const load = assignments
+        .filter(a => a.resource_id === res.id)
+        .reduce((acc, a) => acc + Number(a.allocation_pct || 0), 0);
+      return { name: res.full_name, role: res.role || "", load };
+    }).sort((a,b) => b.load - a.load);
+
+    $("resourceLoadTable").querySelector("tbody").innerHTML = rows.map(x => `
+      <tr>
+        <td>${escapeHtml(x.name)}</td>
+        <td>${escapeHtml(x.role)}</td>
+        <td>${x.load.toFixed(0)}%</td>
+        <td><div class="bar"><span style="width:${Math.min(x.load,150)}%"></span></div></td>
+      </tr>
+    `).join("");
+  }
+
+  function renderProjects(projects) {
+    $("projectDemandTable").querySelector("tbody").innerHTML = projects.map(x => `
+      <tr>
+        <td>${escapeHtml(x.project_name)}</td>
+        <td>${escapeHtml(x.client_name || "")}</td>
+        <td>${escapeHtml(x.status)}</td>
+        <td>${Number(x.demand_fte || 0).toFixed(1)}</td>
+        <td>${x.start_date || ""} → ${x.end_date || ""}</td>
+      </tr>
+    `).join("");
+  }
+
+  function renderAssignments(assignments) {
+    $("assignmentsTable").querySelector("tbody").innerHTML = assignments.map(x => `
+      <tr>
+        <td>${escapeHtml(x.resources?.full_name || "")}</td>
+        <td>${escapeHtml(x.projects?.project_name || "")}</td>
+        <td>${x.start_date} → ${x.end_date}</td>
+        <td>${x.allocation_pct}%</td>
+        <td>${escapeHtml(x.assignment_type)}</td>
+      </tr>
+    `).join("");
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+  }
+
+  $("loginBtn").addEventListener("click", login);
+  $("logoutBtn").addEventListener("click", logout);
+  $("refreshBtn").addEventListener("click", loadDashboard);
+  checkSession();
+</script>
+</body>
+</html>

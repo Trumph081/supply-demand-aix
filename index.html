@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Supply & Demand - AIX</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root { --bg:#f6f7f9; --card:#fff; --text:#17202a; --muted:#687385; --border:#dfe5ec; --accent:#243b6b; --danger:#a61b1b; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--bg); color:var(--text); }
+    header { background:var(--accent); color:white; padding:18px 24px; display:flex; justify-content:space-between; align-items:center; gap:16px; }
+    header h1 { font-size:20px; margin:0; }
+    header small { opacity:.85; }
+    main { padding:24px; max-width:1320px; margin:0 auto; }
+    .grid { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:16px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,.04); }
+    .card h2 { margin:0 0 12px; font-size:17px; }
+    label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+    input, select, textarea, button { width:100%; padding:9px 10px; border:1px solid var(--border); border-radius:10px; font:inherit; }
+    textarea { min-height:64px; }
+    button { background:var(--accent); color:white; cursor:pointer; border:none; font-weight:600; }
+    button.secondary { background:#eef2f7; color:var(--text); border:1px solid var(--border); }
+    button.danger { background:var(--danger); }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th, td { border-bottom:1px solid var(--border); padding:8px; text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:12px; background:#fafbfc; }
+    .toolbar { display:flex; gap:10px; align-items:center; margin:16px 0; }
+    .toolbar > * { width:auto; }
+    .hidden { display:none !important; }
+    .pill { display:inline-block; padding:3px 8px; border-radius:999px; background:#eef2f7; font-size:12px; }
+    .muted { color:var(--muted); }
+    .wide { grid-column:1 / -1; }
+    .actions { display:flex; gap:6px; }
+    .actions button { width:auto; padding:6px 8px; font-size:12px; }
+    #loginCard { max-width:420px; margin:60px auto; }
+    @media (max-width: 980px) { .grid { grid-template-columns:1fr; } header { flex-direction:column; align-items:flex-start; } }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Supply & Demand · AIX</h1>
+    <small>Entorno limpio</small>
+  </div>
+  <div>
+    <span id="userInfo" class="pill">No autenticado</span>
+    <button id="logoutBtn" class="secondary hidden" style="margin-left:8px;width:auto;">Salir</button>
+  </div>
+</header>
+
+<main>
+  <section id="loginCard" class="card">
+    <h2>Acceso</h2>
+    <label>Email</label>
+    <input id="loginEmail" type="email" placeholder="usuario@empresa.com" />
+    <label>Contraseña</label>
+    <input id="loginPassword" type="password" />
+    <div class="toolbar">
+      <button id="loginBtn">Entrar</button>
+    </div>
+    <p class="muted">Los usuarios se crean en Supabase Authentication.</p>
+  </section>
+
+  <section id="app" class="hidden">
+    <div class="toolbar">
+      <button id="refreshBtn" class="secondary">Refrescar</button>
+      <a href="./dashboard.html"><button class="secondary" type="button">Dashboard</button></a>
+      <span id="roleInfo" class="pill">Rol: reader</span>
+    </div>
+
+    <div class="grid">
+      <div class="card editor-only">
+        <h2>Alta recurso</h2>
+        <label>Nombre</label><input id="resName" />
+        <label>Perfil / Rol</label><input id="resRole" placeholder="Cloud Architect, DevOps..." />
+        <label>Equipo</label><input id="resTeam" />
+        <label>Capacidad semanal FTE</label><input id="resCapacity" type="number" step="0.1" value="1" />
+        <label>Notas</label><textarea id="resNotes"></textarea>
+        <div class="toolbar"><button id="addResourceBtn">Guardar recurso</button></div>
+      </div>
+
+      <div class="card editor-only">
+        <h2>Alta proyecto</h2>
+        <label>Proyecto</label><input id="projName" />
+        <label>Cliente</label><input id="projClient" />
+        <label>Estado</label>
+        <select id="projStatus">
+          <option>Pipeline</option><option>Oferta</option><option>Aprobado</option>
+          <option>En curso</option><option>Finalizado</option><option>Cancelado</option>
+        </select>
+        <label>Inicio</label><input id="projStart" type="date" />
+        <label>Fin</label><input id="projEnd" type="date" />
+        <label>Demanda FTE</label><input id="projDemand" type="number" step="0.1" value="0" />
+        <label>Probabilidad %</label><input id="projProb" type="number" step="1" min="0" max="100" />
+        <label>Notas</label><textarea id="projNotes"></textarea>
+        <div class="toolbar"><button id="addProjectBtn">Guardar proyecto</button></div>
+      </div>
+
+      <div class="card editor-only">
+        <h2>Alta asignación</h2>
+        <label>Recurso</label><select id="assResource"></select>
+        <label>Proyecto</label><select id="assProject"></select>
+        <label>Inicio</label><input id="assStart" type="date" />
+        <label>Fin</label><input id="assEnd" type="date" />
+        <label>Asignación %</label><input id="assPct" type="number" step="5" value="100" />
+        <label>Tipo</label>
+        <select id="assType">
+          <option>Delivery</option><option>Preventa</option><option>Gestión</option>
+          <option>Formación</option><option>Interno</option><option>Otro</option>
+        </select>
+        <label>Notas</label><textarea id="assNotes"></textarea>
+        <div class="toolbar"><button id="addAssignmentBtn">Guardar asignación</button></div>
+      </div>
+
+      <div class="card wide">
+        <h2>Recursos</h2>
+        <table id="resourcesTable"><thead><tr><th>Nombre</th><th>Rol</th><th>Equipo</th><th>Capacidad</th><th>Activo</th><th class="admin-only">Acciones</th></tr></thead><tbody></tbody></table>
+      </div>
+
+      <div class="card wide">
+        <h2>Proyectos</h2>
+        <table id="projectsTable"><thead><tr><th>Proyecto</th><th>Cliente</th><th>Estado</th><th>Fechas</th><th>Demanda FTE</th><th>Prob.</th><th class="admin-only">Acciones</th></tr></thead><tbody></tbody></table>
+      </div>
+
+      <div class="card wide">
+        <h2>Asignaciones</h2>
+        <table id="assignmentsTable"><thead><tr><th>Recurso</th><th>Proyecto</th><th>Fechas</th><th>%</th><th>Tipo</th><th class="admin-only">Acciones</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  const ENVIRONMENT_NAME = "AIX";
+  const SUPABASE_URL = "PON_AQUI_TU_SUPABASE_URL";
+  const SUPABASE_ANON_KEY = "PON_AQUI_TU_SUPABASE_ANON_KEY";
+
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  let currentUser = null;
+  let currentRole = "reader";
+  let resources = [];
+  let projects = [];
+  let assignments = [];
+
+  const $ = (id) => document.getElementById(id);
+
+  function isEditor() { return ["admin", "editor"].includes(currentRole); }
+  function isAdmin() { return currentRole === "admin"; }
+
+  function setRoleUi() {
+    $("roleInfo").textContent = `Rol: ${currentRole}`;
+    document.querySelectorAll(".editor-only").forEach(el => el.classList.toggle("hidden", !isEditor()));
+    document.querySelectorAll(".admin-only").forEach(el => el.classList.toggle("hidden", !isAdmin()));
+  }
+
+  async function getRole() {
+    const { data, error } = await sb.from("user_roles").select("role").eq("user_id", currentUser.id).maybeSingle();
+    if (error) console.warn(error);
+    currentRole = data?.role || "reader";
+    setRoleUi();
+  }
+
+  async function login() {
+    const email = $("loginEmail").value.trim();
+    const password = $("loginPassword").value;
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) return alert(error.message);
+    currentUser = data.user;
+    await afterLogin();
+  }
+
+  async function logout() {
+    await sb.auth.signOut();
+    currentUser = null;
+    currentRole = "reader";
+    $("app").classList.add("hidden");
+    $("loginCard").classList.remove("hidden");
+    $("logoutBtn").classList.add("hidden");
+    $("userInfo").textContent = "No autenticado";
+  }
+
+  async function afterLogin() {
+    $("loginCard").classList.add("hidden");
+    $("app").classList.remove("hidden");
+    $("logoutBtn").classList.remove("hidden");
+    $("userInfo").textContent = currentUser.email;
+    await getRole();
+    await loadAll();
+  }
+
+  async function checkSession() {
+    const { data } = await sb.auth.getSession();
+    if (data.session?.user) {
+      currentUser = data.session.user;
+      await afterLogin();
+    }
+  }
+
+  async function loadAll() {
+    const [r, p, a] = await Promise.all([
+      sb.from("resources").select("*").order("full_name"),
+      sb.from("projects").select("*").order("created_at", { ascending:false }),
+      sb.from("assignments").select("*, resources(full_name), projects(project_name)").order("start_date", { ascending:false })
+    ]);
+    if (r.error) alert(r.error.message);
+    if (p.error) alert(p.error.message);
+    if (a.error) alert(a.error.message);
+    resources = r.data || [];
+    projects = p.data || [];
+    assignments = a.data || [];
+    render();
+  }
+
+  function render() {
+    $("assResource").innerHTML = resources.map(x => `<option value="${x.id}">${escapeHtml(x.full_name)}</option>`).join("");
+    $("assProject").innerHTML = projects.map(x => `<option value="${x.id}">${escapeHtml(x.project_name)}</option>`).join("");
+
+    $("resourcesTable").querySelector("tbody").innerHTML = resources.map(x => `
+      <tr>
+        <td>${escapeHtml(x.full_name)}</td>
+        <td>${escapeHtml(x.role || "")}</td>
+        <td>${escapeHtml(x.team || "")}</td>
+        <td>${x.weekly_capacity ?? ""}</td>
+        <td>${x.active ? "Sí" : "No"}</td>
+        ${isAdmin() ? `<td class="actions"><button class="danger" onclick="deleteRow('resources','${x.id}')">Borrar</button></td>` : ""}
+      </tr>`).join("");
+
+    $("projectsTable").querySelector("tbody").innerHTML = projects.map(x => `
+      <tr>
+        <td>${escapeHtml(x.project_name)}</td>
+        <td>${escapeHtml(x.client_name || "")}</td>
+        <td><span class="pill">${escapeHtml(x.status)}</span></td>
+        <td>${x.start_date || ""} → ${x.end_date || ""}</td>
+        <td>${x.demand_fte ?? 0}</td>
+        <td>${x.probability ?? ""}</td>
+        ${isAdmin() ? `<td class="actions"><button class="danger" onclick="deleteRow('projects','${x.id}')">Borrar</button></td>` : ""}
+      </tr>`).join("");
+
+    $("assignmentsTable").querySelector("tbody").innerHTML = assignments.map(x => `
+      <tr>
+        <td>${escapeHtml(x.resources?.full_name || "")}</td>
+        <td>${escapeHtml(x.projects?.project_name || "")}</td>
+        <td>${x.start_date} → ${x.end_date}</td>
+        <td>${x.allocation_pct}%</td>
+        <td>${escapeHtml(x.assignment_type)}</td>
+        ${isAdmin() ? `<td class="actions"><button class="danger" onclick="deleteRow('assignments','${x.id}')">Borrar</button></td>` : ""}
+      </tr>`).join("");
+  }
+
+  async function addResource() {
+    const payload = {
+      full_name: $("resName").value.trim(),
+      role: $("resRole").value.trim(),
+      team: $("resTeam").value.trim(),
+      weekly_capacity: Number($("resCapacity").value || 1),
+      notes: $("resNotes").value.trim()
+    };
+    if (!payload.full_name) return alert("Nombre obligatorio");
+    const { error } = await sb.from("resources").insert(payload);
+    if (error) return alert(error.message);
+    ["resName","resRole","resTeam","resNotes"].forEach(id => $(id).value = "");
+    await loadAll();
+  }
+
+  async function addProject() {
+    const payload = {
+      project_name: $("projName").value.trim(),
+      client_name: $("projClient").value.trim(),
+      business_unit: ENVIRONMENT_NAME,
+      status: $("projStatus").value,
+      start_date: $("projStart").value || null,
+      end_date: $("projEnd").value || null,
+      demand_fte: Number($("projDemand").value || 0),
+      probability: $("projProb").value ? Number($("projProb").value) : null,
+      notes: $("projNotes").value.trim()
+    };
+    if (!payload.project_name) return alert("Proyecto obligatorio");
+    const { error } = await sb.from("projects").insert(payload);
+    if (error) return alert(error.message);
+    ["projName","projClient","projStart","projEnd","projDemand","projProb","projNotes"].forEach(id => $(id).value = "");
+    await loadAll();
+  }
+
+  async function addAssignment() {
+    const payload = {
+      resource_id: $("assResource").value,
+      project_id: $("assProject").value,
+      start_date: $("assStart").value,
+      end_date: $("assEnd").value,
+      allocation_pct: Number($("assPct").value || 0),
+      assignment_type: $("assType").value,
+      notes: $("assNotes").value.trim()
+    };
+    if (!payload.resource_id || !payload.project_id || !payload.start_date || !payload.end_date) return alert("Faltan datos obligatorios");
+    const { error } = await sb.from("assignments").insert(payload);
+    if (error) return alert(error.message);
+    ["assStart","assEnd","assPct","assNotes"].forEach(id => $(id).value = "");
+    $("assPct").value = 100;
+    await loadAll();
+  }
+
+  async function deleteRow(table, id) {
+    if (!confirm("¿Borrar registro?")) return;
+    const { error } = await sb.from(table).delete().eq("id", id);
+    if (error) return alert(error.message);
+    await loadAll();
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+  }
+
+  $("loginBtn").addEventListener("click", login);
+  $("logoutBtn").addEventListener("click", logout);
+  $("refreshBtn").addEventListener("click", loadAll);
+  $("addResourceBtn").addEventListener("click", addResource);
+  $("addProjectBtn").addEventListener("click", addProject);
+  $("addAssignmentBtn").addEventListener("click", addAssignment);
+
+  checkSession();
+</script>
+</body>
+</html>
